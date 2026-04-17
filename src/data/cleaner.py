@@ -27,7 +27,7 @@ def load_and_merge(data_raw: Path) -> pd.DataFrame:
     Returns
     -------
     df : DataFrame với các cột:
-        date, item_id, store_id, sales, wm_yr_wk,
+        date, item_id, store_id,state_id, sales, wm_yr_wk,weekday,month
         event_name_1, snap_CA, snap_TX, snap_WI, sell_price
     """
 
@@ -53,11 +53,13 @@ def load_and_merge(data_raw: Path) -> pd.DataFrame:
 
     # Merge calendar
     df = df.merge(
-        calendar[["d", "date", "wm_yr_wk", "event_name_1",
+        calendar[["d", "date", "wm_yr_wk","weekday","month", "event_name_1",
                     "snap_CA", "snap_TX", "snap_WI"]],
         on="d", how="left"
     )
     df["date"] = pd.to_datetime(df["date"])
+
+    df = df.drop(columns="d")
 
     # free memory
     del calendar
@@ -155,33 +157,29 @@ def fill_sell_price(df: pd.DataFrame) -> pd.DataFrame:
 
 
 FINAL_COLUMNS = [
-    "date", "item_id", "store_id", "sales",
-    "day_of_week", "month", "is_holiday", "is_weekend", "snap",
-    "sell_price", "rolling_7", "rolling_28",
-    "lag_7", "lag_14", "lag_28"
-]
+        "date", "item_id", "store_id", "state_id", "sales", "sell_price",
+        "wm_yr_wk", "weekday", "month", "event_name_1", 
+        "snap_CA", "snap_TX", "snap_WI"
+    ]
 
 def finalize(df: pd.DataFrame) -> pd.DataFrame:
     """
-    - Giữ đúng FINAL_COLUMNS, đúng thứ tự
-    - Assert shape[1] == 15
+    - Assert shape[1] == 13
     - Ghi ra data/processed/sales_clean.parquet
     """
 
-    # rolling/lag chưa có → chỉ giữ 10 cột hiện có
-    cols_available = [c for c in FINAL_COLUMNS if c in df.columns]
-    df = df[cols_available]
     
-    CLEAN_COLUMNS = ["date", "item_id", "store_id", "sales", "sell_price"]
-    df = df[CLEAN_COLUMNS]
-    assert df.shape[1] == 5, f"frame cần 5 cột ,hiện có {df.shape[1]} cột"
-
-    df.to_parquet(OUTPUT / "sales_clean.parquet", index=False)
-    print(f"Saved: {df.shape}")
+    df = df[FINAL_COLUMNS]
+    
+    
+    assert df.shape[1] == 13, f"frame cần 13 cột ,hiện có {df.shape[1]} cột"
 
     df["sales"]      = df["sales"].astype("float64")
     df["sell_price"] = df["sell_price"].astype("float64")
     df["date"] =df["date"].astype("datetime64[ns]")
+
+    df.to_parquet(OUTPUT / "sales_clean.parquet", index=False)
+    print(f"Saved: {df.shape}")
 
     return df
     
@@ -194,18 +192,97 @@ def run_clean():
     4. fill_sell_price()
     5. finalize()
     """
-
+    print(f"buoc 1")
     df = load_and_merge(DATA_RAW)
 
+    
     df = df.sort_values(["item_id","store_id","date"]).reset_index(drop=True)
     gc.collect()
 
+    print(f"buoc 2")
     df = fill_missing_sales(df)
+
+    print(f"buoc 3")
     df = cap_outliers(df)
+
+    print(f"buoc 4")
     df = fill_sell_price(df)
+
+    print(f"buoc 5")
     df = finalize(df)
     
     pass
 
+def run_batch_clean():
+    """
+    Điều phối Pipeline: Chạy 1 Batch = 1 Store
+    """
+    print("--- Bắt đầu Pipeline chạy theo Batch (1 Store/Batch) ---")
+    
+    # 1. Load các bảng 
+    
+    calendar = pd.read_csv(DATA_RAW / "calendar.csv")
+    prices = pd.read_csv(DATA_RAW / "sell_prices.csv")
+    sales_raw = pd.read_csv(DATA_RAW / "sales_train_evaluation.csv")
+    
+    
+    stores = sales_raw['store_id'].unique()
+    all_chunks = []
+
+    # 2. Vòng lặp xử lý từng Store
+    for store in stores:
+        print(f"\n>>> Đang xử lý Batch cho Store: {store}")
+        
+        # Lấy dữ liệu của 1 store
+        df_store = sales_raw[sales_raw['store_id'] == store].copy()
+        
+        # Melt wide -> long
+        id_cols = ["item_id", "store_id", "state_id"]
+        day_cols = [c for c in df_store.columns if c.startswith("d_")]
+        df_chunk = df_store.melt(id_vars=id_cols, value_vars=day_cols, var_name="d", value_name="sales")
+        
+        del df_store; gc.collect()
+
+        # Merge với Calendar
+        df_chunk = df_chunk.merge(
+            calendar[["d", "date", "wm_yr_wk", "weekday", "month", "event_name_1", "snap_CA", "snap_TX", "snap_WI"]],
+            on="d", how="left"
+        )
+        df_chunk["date"] = pd.to_datetime(df_chunk["date"])
+        df_chunk.drop(columns="d", inplace=True)
+
+        # Merge với Prices (chỉ lấy giá của store hiện tại để merge nhanh hơn)
+        prices_store = prices[prices['store_id'] == store]
+        df_chunk = df_chunk.merge(
+            prices_store[["store_id", "item_id", "wm_yr_wk", "sell_price"]],
+            on=["store_id", "item_id", "wm_yr_wk"], how="left"
+        )
+        del prices_store; gc.collect()
+
+        # Sắp xếp để xử lý chuỗi thời gian
+        df_chunk.sort_values(["item_id", "store_id","date"], inplace=True)
+        
+        # Áp dụng các bước Cleaning
+        df_chunk = fill_missing_sales(df_chunk)
+        df_chunk = cap_outliers(df_chunk)
+        df_chunk = fill_sell_price(df_chunk)
+        
+        
+
+        all_chunks.append(df_chunk)
+        print(f"Hoàn thành Batch {store}. RAM đang sử dụng sẽ được giải phóng...")
+        gc.collect()
+
+    # 3. Gộp tất cả các Store đã sạch
+    print("\n--- Đang gộp 10 cửa hàng thành file tổng ---")
+    full_df = pd.concat(all_chunks, ignore_index=True)
+    full_df = full_df.sort_values(["item_id","store_id","date"]).reset_index(drop=True)
+    del all_chunks; gc.collect()
+
+    # 4. Finalize và Lưu file
+    full_df = finalize(full_df)
+
+
 if __name__ == "__main__":
     run_clean()
+    #run_batch_clean()

@@ -215,11 +215,11 @@ def run_clean():
 
 def run_batch_clean():
     """
-    Điều phối Pipeline: Chạy 1 Batch = 1 Store
+        chạy theo batch cho mỗi store
     """
-    print("--- Bắt đầu Pipeline chạy theo Batch (1 Store/Batch) ---")
+    print("--- chạy theo batch cho mỗi store---")
     
-    # 1. Load các bảng 
+    
     
     calendar = pd.read_csv(DATA_RAW / "calendar.csv")
     prices = pd.read_csv(DATA_RAW / "sell_prices.csv")
@@ -229,21 +229,20 @@ def run_batch_clean():
     stores = sales_raw['store_id'].unique()
     all_chunks = []
 
-    # 2. Vòng lặp xử lý từng Store
+    
     for store in stores:
         print(f"\n>>> Đang xử lý Batch cho Store: {store}")
         
-        # Lấy dữ liệu của 1 store
+        
         df_store = sales_raw[sales_raw['store_id'] == store].copy()
         
-        # Melt wide -> long
         id_cols = ["item_id", "store_id", "state_id"]
         day_cols = [c for c in df_store.columns if c.startswith("d_")]
         df_chunk = df_store.melt(id_vars=id_cols, value_vars=day_cols, var_name="d", value_name="sales")
         
         del df_store; gc.collect()
 
-        # Merge với Calendar
+       
         df_chunk = df_chunk.merge(
             calendar[["d", "date", "wm_yr_wk", "weekday", "month", "event_name_1", "snap_CA", "snap_TX", "snap_WI"]],
             on="d", how="left"
@@ -251,7 +250,7 @@ def run_batch_clean():
         df_chunk["date"] = pd.to_datetime(df_chunk["date"])
         df_chunk.drop(columns="d", inplace=True)
 
-        # Merge với Prices (chỉ lấy giá của store hiện tại để merge nhanh hơn)
+        
         prices_store = prices[prices['store_id'] == store]
         df_chunk = df_chunk.merge(
             prices_store[["store_id", "item_id", "wm_yr_wk", "sell_price"]],
@@ -259,10 +258,10 @@ def run_batch_clean():
         )
         del prices_store; gc.collect()
 
-        # Sắp xếp để xử lý chuỗi thời gian
+       
         df_chunk.sort_values(["item_id", "store_id","date"], inplace=True)
         
-        # Áp dụng các bước Cleaning
+      
         df_chunk = fill_missing_sales(df_chunk)
         df_chunk = cap_outliers(df_chunk)
         df_chunk = fill_sell_price(df_chunk)
@@ -273,16 +272,16 @@ def run_batch_clean():
         print(f"Hoàn thành Batch {store}. RAM đang sử dụng sẽ được giải phóng...")
         gc.collect()
 
-    # 3. Gộp tất cả các Store đã sạch
+    # gộp frame
     print("\n--- Đang gộp 10 cửa hàng thành file tổng ---")
     full_df = pd.concat(all_chunks, ignore_index=True)
     full_df = full_df.sort_values(["item_id","store_id","date"]).reset_index(drop=True)
     del all_chunks; gc.collect()
 
-    # 4. Finalize và Lưu file
+    #  finalize
     full_df = finalize(full_df)
 
 
 if __name__ == "__main__":
-    run_clean()
-    #run_batch_clean()
+    #run_clean()
+    run_batch_clean()

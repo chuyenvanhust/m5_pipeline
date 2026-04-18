@@ -1,0 +1,6 @@
+{
+    "n_series":        100,
+    "random_state":    42,
+    "min_intermittent": 20,
+    "max_intermittent": 30
+}

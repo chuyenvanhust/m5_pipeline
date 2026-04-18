@@ -80,7 +80,7 @@ def load_and_merge(data_raw: Path) -> pd.DataFrame:
     gc.collect()
 
     
-
+    df["event_name_1"] = df["event_name_1"].replace("None", np.nan)
     return df
 
 def fill_missing_sales(df: pd.DataFrame) -> pd.DataFrame:
@@ -132,7 +132,7 @@ def cap_outliers(df: pd.DataFrame) -> pd.DataFrame:
         iqr = q3 - q1
         lower = max(0, q1 - 1.5 * iqr) 
         upper = q3 + 1.5 * iqr
-        return x.clip(lower=lower, upper=upper)
+        return x.clip(lower=lower, upper=upper).round(0).astype("float32")
     
 
     df["sales"] = df.groupby(["item_id", "store_id"])["sales"].transform(cap_outliers_per_series)
@@ -177,9 +177,13 @@ def finalize(df: pd.DataFrame) -> pd.DataFrame:
     
     assert df.shape[1] == 13, f"frame cần 13 cột ,hiện có {df.shape[1]} cột"
 
-    df["sales"]      = df["sales"].astype("float64")
-    df["sell_price"] = df["sell_price"].astype("float64")
-    df["date"] =df["date"].astype("datetime64[ns]")
+    df["date"]       = df["date"].astype("datetime64[ns]")
+    df["sales"]      = df["sales"].astype("float32")
+    df["sell_price"] = df["sell_price"].astype("float32")
+    df["month"]      = df["month"].astype("int8")     
+    df["snap_CA"]    = df["snap_CA"].astype("int8")
+    df["snap_TX"]    = df["snap_TX"].astype("int8")
+    df["snap_WI"]    = df["snap_WI"].astype("int8")
 
     df.to_parquet(OUTPUT / "sales_clean.parquet", index=False)
     print(f"Saved: {df.shape}")
@@ -261,15 +265,16 @@ def run_batch_clean():
         )
         del prices_store; gc.collect()
 
-       
-        df_chunk.sort_values(["item_id", "store_id","date"], inplace=True)
+        df_chunk["event_name_1"] = df_chunk["event_name_1"].replace("None", np.nan)
+        df_chunk.sort_values(["item_id","date"], inplace=True)
         
       
         df_chunk = fill_missing_sales(df_chunk)
         df_chunk = cap_outliers(df_chunk)
         df_chunk = fill_sell_price(df_chunk)
         
-        
+        df_chunk["sales"] = df_chunk["sales"].astype("float32")
+        df_chunk["sell_price"] = df_chunk["sell_price"].astype("float32")
 
         all_chunks.append(df_chunk)
         print(f"Hoàn thành Batch {store}. RAM đang sử dụng sẽ được giải phóng...")
@@ -278,7 +283,7 @@ def run_batch_clean():
     # gộp frame
     print("\n--- Đang gộp các cửa hàng thành file tổng ---")
     full_df = pd.concat(all_chunks, ignore_index=True)
-    full_df = full_df.sort_values(["item_id","store_id","date"]).reset_index(drop=True)
+    #full_df = full_df.sort_values(["item_id","store_id","date"]).reset_index(drop=True)
     del all_chunks; gc.collect()
 
     #  finalize

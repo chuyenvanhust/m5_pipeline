@@ -16,8 +16,11 @@ import numpy as np
 import gc
 from pathlib import Path
 
-DATA_RAW = Path("../data/raw")
-OUTPUT = Path("../data/processed")
+BASE_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = BASE_DIR.parent.parent
+
+DATA_RAW = PROJECT_ROOT / "data" / "raw"
+OUTPUT = PROJECT_ROOT / "data" / "processed"
 OUTPUT.mkdir(exist_ok=True, parents=True)
 
 def load_and_merge(data_raw: Path) -> pd.DataFrame:
@@ -273,7 +276,7 @@ def run_batch_clean():
         gc.collect()
 
     # gộp frame
-    print("\n--- Đang gộp 10 cửa hàng thành file tổng ---")
+    print("\n--- Đang gộp các cửa hàng thành file tổng ---")
     full_df = pd.concat(all_chunks, ignore_index=True)
     full_df = full_df.sort_values(["item_id","store_id","date"]).reset_index(drop=True)
     del all_chunks; gc.collect()

@@ -36,11 +36,11 @@ def add_lag_features(df: pd.DataFrame) -> pd.DataFrame:
     - rolling dùng .shift(1) để tránh data leakage
     - lag dùng .shift(N)
     """
-    # Group by item_id và store_id
+    
     df = df.sort_values(['item_id', 'store_id', 'date'])
-    df_grouped = df.groupby(['item_id', 'store_id'])
+    
 
-    # Tính rolling features
+    
     df['rolling_7'] = (
     df.groupby(['item_id', 'store_id'])['sales']
     .transform(lambda x: x.shift(1).rolling(window=7).mean())
@@ -50,7 +50,7 @@ def add_lag_features(df: pd.DataFrame) -> pd.DataFrame:
         .transform(lambda x: x.shift(1).rolling(window=28).mean())
     )
 
-    # Tính lag features
+    
     df['lag_7']  = df.groupby(['item_id','store_id'])['sales'].transform(lambda x: x.shift(7))
     df['lag_14'] = df.groupby(['item_id','store_id'])['sales'].transform(lambda x: x.shift(14))
     df['lag_28'] = df.groupby(['item_id','store_id'])['sales'].transform(lambda x: x.shift(28))
@@ -66,11 +66,11 @@ def run_lag():
     4. Ghi đè sales_clean.parquet
     """
 
-    #1. Đọc sales_clean.parquet
+    
     df = pd.read_parquet(DATA_PROCESSED / "sales_clean.parquet", engine='pyarrow')
-    #2. Gọi add_lag_features()
+    
     df_with_lag = add_lag_features(df)
-    #3. Assert đúng cột
+    
     FINAL_COLUMNS = [
         "date", "item_id", "store_id", "sales",
         "day_of_week", "month", "is_holiday", "is_weekend", "snap",
@@ -85,7 +85,7 @@ def run_lag():
     assert df_with_lag.shape[1] == 15, \
         f"Expected 15 cols, got {df_with_lag.shape[1]}"
     
-    #ep kieu
+    
     df_with_lag['sales'] = df_with_lag['sales'].astype('float64')
     df_with_lag['rolling_7'] = df_with_lag['rolling_7'].astype('float64')
     df_with_lag['rolling_28'] = df_with_lag['rolling_28'].astype('float64')
@@ -93,7 +93,7 @@ def run_lag():
     df_with_lag['lag_14'] = df_with_lag['lag_14'].astype('float64')
     df_with_lag['lag_28'] = df_with_lag['lag_28'].astype('float64')
     df_with_lag['sell_price'] = df_with_lag['sell_price'].astype('float64')
-    #4. Ghi đè sales_clean.parquet
+   
     df_with_lag.to_parquet(
         DATA_PROCESSED / "sales_clean.parquet",
         engine='pyarrow',

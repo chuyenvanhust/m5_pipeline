@@ -98,9 +98,9 @@ def fill_missing_sales(df: pd.DataFrame) -> pd.DataFrame:
     df : DataFrame với sales đã được fill một phần
     """
 
-    # fill missing sales tối đa 3 ngày liên tiếp per series
+    
     df["sales"] = df.groupby(["item_id", "store_id"])["sales"].transform(lambda x: x.ffill(limit=3))
-    # log tổng số NaN còn lại
+    
     total_na = df["sales"].isna().sum()
     print(f"Total NaN in sales after fill: {total_na}")
     return df

@@ -45,7 +45,7 @@ def compute_profile(df: pd.DataFrame, scope: str) -> pd.DataFrame:
                     day_index = 0, 1, 2, ...
                     Bỏ NaN trước khi tính
     """
-    # Group by item_id và store_id
+   
     profile = df.groupby(['item_id', 'store_id']).agg(
         mean_sales=('sales', 'mean'),
         std_sales=('sales', 'std'),
@@ -53,16 +53,16 @@ def compute_profile(df: pd.DataFrame, scope: str) -> pd.DataFrame:
         missing_ratio=('sales', lambda x: x.isna().mean()),
         total_days=('sales', 'size')
     ).reset_index()
-    # Tính cv
+    
     profile['cv'] = profile.apply(lambda row: row['std_sales'] / row['mean_sales'] if row['mean_sales'] >= 0.01 else np.nan, axis=1)
-    # Tính demand_type
+    
     profile['demand_type'] = np.where(profile['zero_ratio'] < 0.3, 'regular', 'intermittent')
-    # Tính trend_slope
+    
     def compute_trend(group):
         group = group.sort_values('date')
         sales = group['sales'].values
         day_index = np.arange(len(sales))
-        # Bỏ NaN
+        
         mask = ~np.isnan(sales)
         if mask.sum() < 2:  # Nếu còn ít hơn 2 điểm sau khi bỏ NaN → slope = 0
             return 0.0
@@ -74,7 +74,7 @@ def compute_profile(df: pd.DataFrame, scope: str) -> pd.DataFrame:
         .reset_index(name='trend_slope')
     )
     profile = profile.merge(trend_slopes, on=['item_id', 'store_id'])
-    # Thêm profile_scope
+    
     profile['profile_scope'] = scope
     
 
@@ -89,16 +89,16 @@ def run_profile():
     5. Ghi ra data/processed/
     """
 
-    # 1. Đọc sales_clean.parquet
+   
     df = pd.read_parquet(DATA_PROCESSED / "sales_clean.parquet", engine='pyarrow')
 
-    # 2. Tính sampling_profile  : df[df.date < PRE_TEST_DATE]
+    
     df_sampling = compute_profile(df[df['date'] < PRE_TEST_DATE], scope="pre_test")
 
-    # 3. Tính analysis_profile  : toàn bộ df
+    
     df_analysis = compute_profile(df, scope="full")
 
-    # 4. Assert đúng cột
+    
     FINAL_COLUMNS = [
         "item_id", "store_id", "mean_sales",
         "std_sales", "cv", "zero_ratio",
@@ -114,7 +114,7 @@ def run_profile():
     assert list(df_analysis.columns) == FINAL_COLUMNS,f"Schema sai: {list(df_analysis.columns)}"
     assert df_analysis.shape[1] == 11,  f"Expected 11 cols, got {df_analysis.shape[1]}"
 
-    #4. Ghi ra data/processed/
+   
     df_sampling.to_csv(DATA_PROCESSED / "sampling_profile.csv", index=False)
     df_analysis.to_csv(DATA_PROCESSED / "analysis_profile.csv", index=False)
 

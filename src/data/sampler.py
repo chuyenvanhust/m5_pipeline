@@ -61,16 +61,16 @@ def stratified_sample(profile: pd.DataFrame) -> pd.DataFrame:
     regular      = profile[profile['demand_type'] == 'regular']
     intermittent = profile[profile['demand_type'] == 'intermittent']
 
-    # Cố định 25 intermittent (giữa MIN=20 và MAX=30)
+    
     N_INTERMITTENT = 25
     N_REGULAR      = N_SERIES - N_INTERMITTENT  # 75
 
-    # Sample intermittent — stratify theo cv_tertile
+    
     intermittent = intermittent.copy()
     intermittent['stratum'] = intermittent['cv_tertile'].astype(str)
     inter_counts = intermittent['stratum'].value_counts()
     inter_props  = (inter_counts / inter_counts.sum() * N_INTERMITTENT).round().astype(int)
-    # điều chỉnh tổng
+    
     diff = N_INTERMITTENT - inter_props.sum()
     if diff != 0:
         inter_props[inter_props.idxmax()] += diff
@@ -87,7 +87,7 @@ def stratified_sample(profile: pd.DataFrame) -> pd.DataFrame:
         )
     )
 
-    # Sample regular — stratify theo cv_tertile × mean_tertile
+    
     regular = regular.copy()
     regular['stratum'] = (
         regular['cv_tertile'].astype(str) + '_' +
@@ -95,7 +95,7 @@ def stratified_sample(profile: pd.DataFrame) -> pd.DataFrame:
     )
     reg_counts = regular['stratum'].value_counts()
     reg_props  = (reg_counts / reg_counts.sum() * N_REGULAR).round().astype(int)
-    # điều chỉnh tổng
+    
     diff = N_REGULAR - reg_props.sum()
     if diff != 0:
         reg_props[reg_props.idxmax()] += diff
@@ -116,7 +116,7 @@ def stratified_sample(profile: pd.DataFrame) -> pd.DataFrame:
         [selected_inter, selected_reg]
     )[['item_id','store_id']].reset_index(drop=True)
 
-    # Verify
+    
     n_inter = selected.merge(
         profile[['item_id','store_id','demand_type']],
         on=['item_id','store_id']
@@ -135,22 +135,21 @@ def run_sample():
     5. Ghi ra config/selected_series.csv
     6. In phân phối demand_type để gửi approve
     """
-    # 1. Đọc sampling_profile.csv
+    
     profile = pd.read_csv(DATA_PROCESSED / "sampling_profile.csv")
     
-    #`2. Gọi stratified_sample() 
     selected = stratified_sample(profile)
 
-    # 3. Assert shape == (100, 2)
+    
     assert selected.shape == (N_SERIES, 2), f"Expected shape {(N_SERIES, 2)}, got {selected.shape}"
 
-    # 4. Assert không có duplicate (item_id, store_id)
+    
     assert not selected.duplicated(subset=['item_id', 'store_id']).any(), "Duplicate (item_id, store_id) found"
 
-    # 5. Ghi ra config/selected_series.csv
+    
     selected.to_csv(CONFIG_DIR / "selected_series.csv", index=False)
 
-    # 6. In phân phối demand_type để gửi approve
+    
     demand_dist = profile.merge(selected, on=['item_id', 'store_id'])['demand_type'].value_counts()
     print("Distribution of demand_type in selected sample:")
     print(demand_dist)

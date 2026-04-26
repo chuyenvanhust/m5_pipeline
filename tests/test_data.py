@@ -1,6 +1,6 @@
 # test_data.py
 """
-Test toàn bộ output của ETL pipeline theo spec.
+Test toàn bộ output của ETL pipeline .
 
 Chạy: pytest tests/test_data.py -v
 """
@@ -80,31 +80,76 @@ class TestSchema:
             f"Expected 59181090 rows, got {sales_clean.shape[0]}"
 
 # --------------------------------------------------------
-# Test 2 — Data Leakage: rolling/lag dùng đúng shift(1)
+# Test 2 — Data Leakage
 # --------------------------------------------------------
 
 class TestLeakage:
 
-    def test_rolling_7_no_leakage(self, sales_clean):
-        """
-        rolling_7 tại ngày t chỉ được dùng data đến t-1.
-        Verify: rolling_7(t) = mean(sales[t-7:t-1])
-        Lấy 1 series mẫu để check.
-        """
-        pass
+    @pytest.fixture(scope="class")
+    def sample_series(self, sales_clean):
+        """Lấy 5 series ngẫu nhiên để test leakage."""
+        np.random.seed(42)
+        pairs = (
+            sales_clean[["item_id", "store_id"]]
+            .drop_duplicates()
+            .sample(n=5, random_state=42)
+            .values.tolist()
+        )
+        return [
+            sales_clean[
+                (sales_clean["item_id"] == item_id) &
+                (sales_clean["store_id"] == store_id)
+            ]
+            .sort_values("date")
+            .reset_index(drop=True)
+            for item_id, store_id in pairs
+        ]
 
-    def test_rolling_28_no_leakage(self, sales_clean):
-        pass
+    def test_rolling_7_no_leakage(self, sample_series):
+        for series in sample_series:
+            for i in range(10, 30):
+                actual = series["rolling_7"].iloc[i]
+                if pd.notna(actual):
+                    expected = series["sales"].iloc[i-7:i].mean()
+                    assert abs(actual - expected) < 1e-3, \
+                        f"rolling_7 leakage tại {series['item_id'].iloc[0]} row {i}: "\
+                        f"expected {expected:.4f}, got {actual:.4f}"
 
-    def test_lag_7_correct(self, sales_clean):
-        """lag_7(t) == sales(t-7) cho 1 series mẫu."""
-        pass
+    def test_rolling_28_no_leakage(self, sample_series):
+        for series in sample_series:
+            for i in range(30, 50):
+                actual = series["rolling_28"].iloc[i]
+                if pd.notna(actual):
+                    expected = series["sales"].iloc[i-28:i].mean()
+                    assert abs(actual - expected) < 1e-3, \
+                        f"rolling_28 leakage tại {series['item_id'].iloc[0]} row {i}"
 
-    def test_lag_14_correct(self, sales_clean):
-        pass
+    def test_lag_7_correct(self, sample_series):
+        for series in sample_series:
+            for i in range(10, 30):
+                actual   = series["lag_7"].iloc[i]
+                expected = series["sales"].iloc[i - 7]
+                if pd.notna(actual):
+                    assert abs(actual - expected) < 1e-3, \
+                        f"lag_7 sai tại {series['item_id'].iloc[0]} row {i}"
 
-    def test_lag_28_correct(self, sales_clean):
-        pass
+    def test_lag_14_correct(self, sample_series):
+        for series in sample_series:
+            for i in range(20, 40):
+                actual   = series["lag_14"].iloc[i]
+                expected = series["sales"].iloc[i - 14]
+                if pd.notna(actual):
+                    assert abs(actual - expected) < 1e-3, \
+                        f"lag_14 sai tại {series['item_id'].iloc[0]} row {i}"
+
+    def test_lag_28_correct(self, sample_series):
+        for series in sample_series:
+            for i in range(30, 50):
+                actual   = series["lag_28"].iloc[i]
+                expected = series["sales"].iloc[i - 28]
+                if pd.notna(actual):
+                    assert abs(actual - expected) < 1e-3, \
+                        f"lag_28 sai tại {series['item_id'].iloc[0]} row {i}"
 
 # --------------------------------------------------------
 # Test 3 — sell_price: không có backward fill
@@ -112,13 +157,34 @@ class TestLeakage:
 
 class TestSellPrice:
 
-    def test_no_backward_fill(self, sales_clean):
-        """
-        Với mỗi series, ngày đầu tiên có sell_price
-        phải là ngày đầu tiên giá thực sự xuất hiện
-        trong raw data — không được fill ngược về trước.
-        """
-        pass
+    @pytest.fixture(scope="class")
+    def sample_series(self, sales_clean):
+        """Lấy 10 series ngẫu nhiên để test sell_price."""
+        pairs = (
+            sales_clean[["item_id", "store_id"]]
+            .drop_duplicates()
+            .sample(n=10, random_state=42)
+            .values.tolist()
+        )
+        return [
+            sales_clean[
+                (sales_clean["item_id"] == item_id) &
+                (sales_clean["store_id"] == store_id)
+            ]
+            .sort_values("date")
+            .reset_index(drop=True)
+            for item_id, store_id in pairs
+        ]
+
+    def test_no_backward_fill(self, sample_series):
+        for series in sample_series:
+            first_valid = series["sell_price"].first_valid_index()
+            if first_valid is not None and first_valid > 0:
+                before = series["sell_price"].iloc[:first_valid]
+                assert before.isna().all(), \
+                    f"sell_price backward fill tại "\
+                    f"{series['item_id'].iloc[0]}/{series['store_id'].iloc[0]}: "\
+                    f"có giá trị trước ngày đầu tiên trong raw data"
 
     def test_no_negative_price(self, sales_clean):
         valid_prices = sales_clean["sell_price"].dropna()
@@ -126,14 +192,14 @@ class TestSellPrice:
             "sell_price có giá trị <= 0"
 
 # --------------------------------------------------------
-# Test 4 — sampling_profile: chỉ dùng data pre-test
+# Test 4 — sampling_profile
 # --------------------------------------------------------
 
 class TestSamplingProfile:
 
     def test_pre_test_date(self, sampling_profile):
         """
-        sampling_profile chỉ được tính trên data < 2016-03-01.
+        
         Verify qua max date trong profile scope.
         """
         assert "profile_scope" in sampling_profile.columns
@@ -152,7 +218,7 @@ class TestSamplingProfile:
         assert dupes == 0, f"sampling_profile có {dupes} duplicate series"
 
 # --------------------------------------------------------
-# Test 5 — selected_series: 100 rows, không duplicate
+# Test 5 — selected_series
 # --------------------------------------------------------
 
 class TestSelectedSeries:
@@ -203,8 +269,8 @@ class TestSelectedSeries:
 class TestSplitter:
 
     def test_fold_count(self, folds):
-        assert 7 <= len(folds) <= 8, \
-            f"Expected 7-8 folds, got {len(folds)}"
+        assert len(folds) == 8, \
+            f"Du kien 8 ,hien co {len(folds)}"
 
     def test_fold_keys(self, folds):
         required = {"fold", "train_start", "train_end",

@@ -53,7 +53,7 @@ def get_folds(config_path: str) -> list[dict]:
     - train_start luôn cố định = ngày đầu tiên trong data
     - train_end   = test_start - 1 ngày
     - test window dịch chuyển theo step mỗi fold
-    - Khoảng 7-8 folds với config hiện tại
+    - 8 folds ( fold cuoi co the ngắn hơn )
     """
 
     config = json.load(open(config_path))
@@ -94,13 +94,13 @@ def run_splitter():
     """
 
         
-    # 1. Gọi get_folds()
+    
     folds = get_folds(CONFIG_DIR / "split_config.json")
-    # 2. In ra tất cả folds để verify
+    
     for fold in folds:
         print(fold)
     
-    # 3. Lưu folds ra config/folds.json để tham khảo
+    
     with open(CONFIG_DIR / "folds.json", "w") as f:
         json.dump(folds, f, indent=4)
     assert 7 <= len(folds) <= 8, f"Expected 7-8 folds, got {len(folds)}"
